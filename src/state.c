@@ -18,6 +18,33 @@
 
 #include "project.h"
 
+static int set_state(struct xen_device *xendev, enum xenbus_state state)
+{
+    int rc;
+
+    rc = xs_write_be_int(xendev, "state", state);
+    if (rc < 0)
+	return rc;
+    xendev->be_state = state;
+    return 0;
+}
+
+static void disconnect(struct xen_device *xendev, enum xenbus_state state)
+{
+    struct xen_backend *xenback = xendev->backend;
+
+    if (xendev->be_state != XenbusStateClosing &&
+	xendev->be_state != XenbusStateClosed) {
+
+        if (xenback->ops->disconnect)
+            xenback->ops->disconnect(xendev->dev);
+    }
+
+    if (xendev->be_state != state)
+        set_state(xendev, state);
+
+}
+
 void backend_changed(struct xen_device *xendev, const char *node)
 {
     struct xen_backend *xenback = xendev->backend;
@@ -32,6 +59,17 @@ void backend_changed(struct xen_device *xendev, const char *node)
 
         if (xenback->ops->backend_changed)
             xenback->ops->backend_changed(xendev->dev, node, val);
+
+        /* We were told to close */
+        if (strcmp(node, "state") == 0 && strcmp(val, "5") == 0) {
+            /* The frontend never connected. */
+            if (xendev->fe_state == XenbusStateInitialising ||
+		xendev->fe_state == XenbusStateUnknown) {
+                /* So we close ourselves. */
+                disconnect(xendev, XenbusStateClosed);
+            }
+        }
+
         free(val);
     }
 }
@@ -60,18 +98,6 @@ void frontend_changed(struct xen_device *xendev, const char *node)
         free(val);
     }
 }
-
-static int set_state(struct xen_device *xendev, enum xenbus_state state)
-{
-    int rc;
-
-    rc = xs_write_be_int(xendev, "state", state);
-    if (rc < 0)
-	return rc;
-    xendev->be_state = state;
-    return 0;
-}
-
 
 static int try_setup(struct xen_device *xendev)
 {
@@ -152,22 +178,6 @@ static int try_reset(struct xen_device *xendev)
 
     set_state(xendev, XenbusStateInitialising);
     return 0;
-}
-
-static void disconnect(struct xen_device *xendev, enum xenbus_state state)
-{
-    struct xen_backend *xenback = xendev->backend;
-
-    if (xendev->be_state != XenbusStateClosing &&
-	xendev->be_state != XenbusStateClosed) {
-
-        if (xenback->ops->disconnect)
-            xenback->ops->disconnect(xendev->dev);
-    }
-
-    if (xendev->be_state != state)
-        set_state(xendev, state);
-
 }
 
 void check_state(struct xen_device *xendev)
