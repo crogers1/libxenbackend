@@ -61,7 +61,7 @@ void backend_changed(struct xen_device *xendev, const char *node)
             xenback->ops->backend_changed(xendev->dev, node, val);
 
         /* We were told to close */
-        if (strcmp(node, "state") == 0 && strcmp(val, "5") == 0) {
+        if (strcmp(node, "state") == 0 && val && strcmp(val, "5") == 0) {
             /* The frontend never connected. */
             if (xendev->fe_state == XenbusStateInitialising ||
 		xendev->fe_state == XenbusStateUnknown) {
